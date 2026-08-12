@@ -17,7 +17,7 @@ type Cache struct {
 	conninfo []string
 }
 
-//NewSsdbCache create new ssdb adapter.
+// NewSsdbCache create new ssdb adapter.
 func NewSsdbCache() cache.Cache {
 	return &Cache{}
 }
@@ -123,6 +123,17 @@ func (rc *Cache) Incr(key string) error {
 	return err
 }
 
+// Incr increase counter by increment.
+func (rc *Cache) IncrBy(key string, increment int) error {
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return err
+		}
+	}
+	_, err := rc.conn.Do("incr", key, increment)
+	return err
+}
+
 // Decr decrease counter.
 func (rc *Cache) Decr(key string) error {
 	if rc.conn == nil {
@@ -131,6 +142,17 @@ func (rc *Cache) Decr(key string) error {
 		}
 	}
 	_, err := rc.conn.Do("incr", key, -1)
+	return err
+}
+
+// Decr decrease counter.
+func (rc *Cache) DecrBy(key string, decrement int) error {
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return err
+		}
+	}
+	_, err := rc.conn.Do("incr", key, -decrement)
 	return err
 }
 

@@ -186,6 +186,20 @@ func (fc *FileCache) Incr(key string) error {
 	return nil
 }
 
+// Incr will increase cached int value.
+// fc value is saving forever unless Delete.
+func (fc *FileCache) IncrBy(key string, increment int) error {
+	data := fc.Get(key)
+	var incr int
+	if reflect.TypeOf(data).Name() != "int" {
+		incr = increment
+	} else {
+		incr = data.(int) + increment
+	}
+	fc.Put(key, incr, time.Duration(fc.EmbedExpiry))
+	return nil
+}
+
 // Decr will decrease cached int value.
 func (fc *FileCache) Decr(key string) error {
 	data := fc.Get(key)
@@ -194,6 +208,19 @@ func (fc *FileCache) Decr(key string) error {
 		decr = 0
 	} else {
 		decr = data.(int) - 1
+	}
+	fc.Put(key, decr, time.Duration(fc.EmbedExpiry))
+	return nil
+}
+
+// Decr will decrease cached int value.
+func (fc *FileCache) DecrBy(key string, decrement int) error {
+	data := fc.Get(key)
+	var decr int
+	if reflect.TypeOf(data).Name() != "int" || data.(int)-decrement <= 0 {
+		decr = 0
+	} else {
+		decr = data.(int) - decrement
 	}
 	fc.Put(key, decr, time.Duration(fc.EmbedExpiry))
 	return nil

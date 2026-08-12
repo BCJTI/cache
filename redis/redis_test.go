@@ -16,12 +16,35 @@ package redis
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/bcjti/cache"
 	"github.com/gomodule/redigo/redis"
 )
+
+func TestRedisIncrBy(t *testing.T) {
+	bm, err := cache.NewCache("redis", `{"conn": "127.0.0.1:6379"}`)
+	if err != nil {
+		t.Error("init err")
+	}
+
+	bm.Put("edwardhey", 0, time.Second*20)
+	wg := sync.WaitGroup{}
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func(x int) {
+			defer wg.Done()
+			bm.IncrBy("edwardhey", x)
+		}(i + 1)
+	}
+	wg.Wait()
+	// 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
+	if v, _ := redis.Int(bm.Get("edwardhey"), err); v != 55 {
+		t.Error("Incr err")
+	}
+}
 
 func TestRedisCache(t *testing.T) {
 	bm, err := cache.NewCache("redis", `{"conn": "127.0.0.1:6379"}`)
@@ -51,6 +74,22 @@ func TestRedisCache(t *testing.T) {
 
 	if err = bm.Incr("astaxie"); err != nil {
 		t.Error("Incr Error", err)
+	}
+
+	if v, _ := redis.Int(bm.Get("astaxie"), err); v != 2 {
+		t.Error("get err")
+	}
+
+	if err = bm.IncrBy("astaxie", 3); err != nil {
+		t.Error("Incr Error", err)
+	}
+
+	if v, _ := redis.Int(bm.Get("astaxie"), err); v != 5 {
+		t.Error("get err")
+	}
+
+	if err = bm.DecrBy("astaxie", 3); err != nil {
+		t.Error("Decr Error", err)
 	}
 
 	if v, _ := redis.Int(bm.Get("astaxie"), err); v != 2 {

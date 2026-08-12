@@ -16,19 +16,21 @@
 // Usage:
 //
 // import(
-//   "github.com/bcjti/cache"
+//
+//	"github.com/bcjti/cache"
+//
 // )
 //
 // bm, err := cache.NewCache("memory", `{"interval":60}`)
 //
 // Use it like this:
 //
-//	bm.Put("astaxie", 1, 10 * time.Second)
-//	bm.Get("astaxie")
-//	bm.IsExist("astaxie")
-//	bm.Delete("astaxie")
+//		bm.Put("astaxie", 1, 10 * time.Second)
+//		bm.Get("astaxie")
+//		bm.IsExist("astaxie")
+//		bm.Delete("astaxie")
 //
-//  more docs http://beego.me/docs/module/cache.md
+//	 more docs http://beego.me/docs/module/cache.md
 package cache
 
 import (
@@ -38,13 +40,15 @@ import (
 
 // Cache interface contains all behaviors for cache adapter.
 // usage:
+//
 //	cache.Register("file",cache.NewFileCache) // this operation is run in init method of file.go.
 //	c,err := cache.NewCache("file","{....}")
 //	c.Put("key",value, 3600 * time.Second)
 //	v := c.Get("key")
 //
-//	c.Incr("counter")  // now is 1
-//	c.Incr("counter")  // now is 2
+//	c.Incr("counter")				// now is 1
+//	c.Incr("counter")				// now is 2
+//	c.IncrBy("counter", 3)	// now is 5
 //	count := c.Get("counter").(int)
 type Cache interface {
 	// get cached value by key.
@@ -57,8 +61,16 @@ type Cache interface {
 	Delete(key string) error
 	// increase cached int value by key, as a counter.
 	Incr(key string) error
+
+	// increase cached int value by key and the increment, as a counter/game score.
+	IncrBy(key string, increment int) error
+
 	// decrease cached int value by key, as a counter.
 	Decr(key string) error
+
+	// decrease cached int value by key and the decrement, as a counter/game score.
+	DecrBy(key string, decrement int) error
+
 	// check if cached value exists or not.
 	IsExist(key string) bool
 	// clear all cache.

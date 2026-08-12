@@ -43,6 +43,28 @@ func TestCacheIncr(t *testing.T) {
 	}
 }
 
+func TestCacheIncrBy(t *testing.T) {
+	bm, err := NewCache("memory", `{"interval":20}`)
+	if err != nil {
+		t.Error("init err")
+	}
+
+	bm.Put("edwardhey", 0, time.Second*20)
+	wg := sync.WaitGroup{}
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func(x int) {
+			defer wg.Done()
+			bm.IncrBy("edwardhey", x)
+		}(i + 1)
+	}
+	wg.Wait()
+	// 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
+	if bm.Get("edwardhey").(int) != 55 {
+		t.Error("Incr err")
+	}
+}
+
 func TestCache(t *testing.T) {
 	bm, err := NewCache("memory", `{"interval":20}`)
 	if err != nil {
@@ -60,7 +82,7 @@ func TestCache(t *testing.T) {
 		t.Error("get err")
 	}
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	if bm.IsExist("astaxie") {
 		t.Error("check err")
@@ -71,6 +93,22 @@ func TestCache(t *testing.T) {
 	}
 
 	if err = bm.Incr("astaxie"); err != nil {
+		t.Error("Incr Error", err)
+	}
+
+	if v := bm.Get("astaxie"); v.(int) != 2 {
+		t.Error("get err")
+	}
+
+	if err = bm.IncrBy("astaxie", 3); err != nil {
+		t.Error("Incr Error", err)
+	}
+
+	if v := bm.Get("astaxie"); v.(int) != 5 {
+		t.Error("get err")
+	}
+
+	if err = bm.DecrBy("astaxie", 3); err != nil {
 		t.Error("Incr Error", err)
 	}
 
@@ -138,6 +176,22 @@ func TestFileCache(t *testing.T) {
 	}
 
 	if err = bm.Incr("astaxie"); err != nil {
+		t.Error("Incr Error", err)
+	}
+
+	if v := bm.Get("astaxie"); v.(int) != 2 {
+		t.Error("get err")
+	}
+
+	if err = bm.IncrBy("astaxie", 3); err != nil {
+		t.Error("Incr Error", err)
+	}
+
+	if v := bm.Get("astaxie"); v.(int) != 5 {
+		t.Error("get err")
+	}
+
+	if err = bm.DecrBy("astaxie", 3); err != nil {
 		t.Error("Incr Error", err)
 	}
 

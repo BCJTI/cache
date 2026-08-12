@@ -20,13 +20,15 @@
 //
 // Usage:
 // import(
-//   _ "github.com/bcjti/cache/memcache"
-//   "github.com/bcjti/cache"
+//
+//	_ "github.com/bcjti/cache/memcache"
+//	"github.com/bcjti/cache"
+//
 // )
 //
-//  bm, err := cache.NewCache("memcache", `{"conn":"127.0.0.1:11211"}`)
+//	bm, err := cache.NewCache("memcache", `{"conn":"127.0.0.1:11211"}`)
 //
-//  more docs http://beego.me/docs/module/cache.md
+//	more docs http://beego.me/docs/module/cache.md
 package memcache
 
 import (
@@ -127,6 +129,17 @@ func (rc *Cache) Incr(key string) error {
 	return err
 }
 
+// Incr increase counter.
+func (rc *Cache) IncrBy(key string, increment int) error {
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return err
+		}
+	}
+	_, err := rc.conn.Increment(key, uint64(increment))
+	return err
+}
+
 // Decr decrease counter.
 func (rc *Cache) Decr(key string) error {
 	if rc.conn == nil {
@@ -135,6 +148,17 @@ func (rc *Cache) Decr(key string) error {
 		}
 	}
 	_, err := rc.conn.Decrement(key, 1)
+	return err
+}
+
+// Decr decrease counter.
+func (rc *Cache) DecrBy(key string, decrement int) error {
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return err
+		}
+	}
+	_, err := rc.conn.Decrement(key, uint64(decrement))
 	return err
 }
 

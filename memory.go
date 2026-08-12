@@ -135,6 +135,34 @@ func (bc *MemoryCache) Incr(key string) error {
 	return nil
 }
 
+// Incr increase cache counter in memory.
+// it supports int,int32,int64,uint,uint32,uint64.
+func (bc *MemoryCache) IncrBy(key string, increment int) error {
+	bc.Lock()
+	defer bc.Unlock()
+	itm, ok := bc.items[key]
+	if !ok {
+		return errors.New("key not exist")
+	}
+	switch val := itm.val.(type) {
+	case int:
+		itm.val = val + increment
+	case int32:
+		itm.val = val + int32(increment)
+	case int64:
+		itm.val = val + int64(increment)
+	case uint:
+		itm.val = val + uint(increment)
+	case uint32:
+		itm.val = val + uint32(increment)
+	case uint64:
+		itm.val = val + uint64(increment)
+	default:
+		return errors.New("item val is not (u)int (u)int32 (u)int64")
+	}
+	return nil
+}
+
 // Decr decrease counter in memory.
 func (bc *MemoryCache) Decr(key string) error {
 	bc.Lock()
@@ -165,6 +193,45 @@ func (bc *MemoryCache) Decr(key string) error {
 	case uint64:
 		if val > 0 {
 			itm.val = val - 1
+		} else {
+			return errors.New("item val is less than 0")
+		}
+	default:
+		return errors.New("item val is not int int64 int32")
+	}
+	return nil
+}
+
+// Decr decrease counter in memory.
+func (bc *MemoryCache) DecrBy(key string, decrement int) error {
+	bc.Lock()
+	defer bc.Unlock()
+	itm, ok := bc.items[key]
+	if !ok {
+		return errors.New("key not exist")
+	}
+	switch val := itm.val.(type) {
+	case int:
+		itm.val = val - decrement
+	case int64:
+		itm.val = val - int64(decrement)
+	case int32:
+		itm.val = val - int32(decrement)
+	case uint:
+		if val > 0 {
+			itm.val = val - uint(decrement)
+		} else {
+			return errors.New("item val is less than 0")
+		}
+	case uint32:
+		if val > 0 {
+			itm.val = val - uint32(decrement)
+		} else {
+			return errors.New("item val is less than 0")
+		}
+	case uint64:
+		if val > 0 {
+			itm.val = val - uint64(decrement)
 		} else {
 			return errors.New("item val is less than 0")
 		}

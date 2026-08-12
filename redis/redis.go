@@ -20,13 +20,15 @@
 //
 // Usage:
 // import(
-//   _ "github.com/bcjti/cache/redis"
-//   "github.com/bcjti/cache"
+//
+//	_ "github.com/bcjti/cache/redis"
+//	"github.com/bcjti/cache"
+//
 // )
 //
-//  bm, err := cache.NewCache("redis", `{"conn":"127.0.0.1:11211"}`)
+//	bm, err := cache.NewCache("redis", `{"conn":"127.0.0.1:11211"}`)
 //
-//  more docs http://beego.me/docs/module/cache.md
+//	more docs http://beego.me/docs/module/cache.md
 package redis
 
 import (
@@ -131,9 +133,21 @@ func (rc *Cache) Incr(key string) error {
 	return err
 }
 
+// Incr increase counter in redis.
+func (rc *Cache) IncrBy(key string, increment int) error {
+	_, err := redis.Bool(rc.do("INCRBY", key, increment))
+	return err
+}
+
 // Decr decrease counter in redis.
 func (rc *Cache) Decr(key string) error {
 	_, err := redis.Bool(rc.do("INCRBY", key, -1))
+	return err
+}
+
+// Decr decrease counter in redis.
+func (rc *Cache) DecrBy(key string, decrement int) error {
+	_, err := redis.Bool(rc.do("INCRBY", key, -decrement))
 	return err
 }
 
