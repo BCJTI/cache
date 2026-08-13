@@ -34,6 +34,7 @@ package memcache
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -118,48 +119,72 @@ func (rc *Cache) Delete(key string) error {
 	return rc.conn.Delete(key)
 }
 
-// Incr increase counter.
+// Incr increases counter by 1.
+// it is equivalent to IncrBy(key, 1), discarding the new value.
 func (rc *Cache) Incr(key string) error {
-	if rc.conn == nil {
-		if err := rc.connectInit(); err != nil {
-			return err
-		}
-	}
-	_, err := rc.conn.Increment(key, 1)
+	_, err := rc.IncrBy(key, 1)
 	return err
 }
 
-// Incr increase counter.
-func (rc *Cache) IncrBy(key string, increment int) error {
-	if rc.conn == nil {
-		if err := rc.connectInit(); err != nil {
-			return err
-		}
+// IncrBy increases the counter by increment and returns the new value as
+// int64. increment must be >= 0 (use DecrBy to decrease).
+// the stored value must be an ASCII decimal string (seed it with
+// Put(key, "0", ttl)); a missing key is created as 0, without expiration,
+// before the increment is applied.
+func (rc *Cache) IncrBy(key string, increment int) (int64, error) {
+	if increment < 0 {
+		return 0, errors.New("increment must be >= 0, use DecrBy to decrease")
 	}
-	_, err := rc.conn.Increment(key, uint64(increment))
-	return err
+	return rc.incrDecr(key, uint64(increment), false)
 }
 
-// Decr decrease counter.
+// Decr decreases counter by 1.
+// it is equivalent to DecrBy(key, 1), discarding the new value.
 func (rc *Cache) Decr(key string) error {
-	if rc.conn == nil {
-		if err := rc.connectInit(); err != nil {
-			return err
-		}
-	}
-	_, err := rc.conn.Decrement(key, 1)
+	_, err := rc.DecrBy(key, 1)
 	return err
 }
 
-// Decr decrease counter.
-func (rc *Cache) DecrBy(key string, decrement int) error {
+// DecrBy decreases the counter by decrement and returns the new value as
+// int64. decrement must be >= 0 (use IncrBy to increase). memcached counters
+// are unsigned: decreasing below 0 clamps the value at 0 without error.
+// see IncrBy for the stored-value and missing-key semantics.
+func (rc *Cache) DecrBy(key string, decrement int) (int64, error) {
+	if decrement < 0 {
+		return 0, errors.New("decrement must be >= 0, use IncrBy to increase")
+	}
+	return rc.incrDecr(key, uint64(decrement), true)
+}
+
+// incrDecr runs memcached incr/decr with delta, creating a missing key as
+// "0" first, and returns the new value converted to int64.
+func (rc *Cache) incrDecr(key string, delta uint64, negate bool) (int64, error) {
 	if rc.conn == nil {
 		if err := rc.connectInit(); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	_, err := rc.conn.Decrement(key, uint64(decrement))
-	return err
+	op := rc.conn.Increment
+	if negate {
+		op = rc.conn.Decrement
+	}
+	nv, err := op(key, delta)
+	if err == memcache.ErrCacheMiss {
+		// memcached never auto-creates counters: seed the key with "0" and
+		// retry once. losing the Add race (ErrNotStored) is fine — the
+		// retry applies the delta to the concurrent writer's value.
+		if err = rc.conn.Add(&memcache.Item{Key: key, Value: []byte("0")}); err != nil && err != memcache.ErrNotStored {
+			return 0, err
+		}
+		nv, err = op(key, delta)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if nv > math.MaxInt64 {
+		return 0, errors.New("value overflows int64")
+	}
+	return int64(nv), nil
 }
 
 // IsExist check value exists in memcache.

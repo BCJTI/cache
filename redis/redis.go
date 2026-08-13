@@ -133,10 +133,16 @@ func (rc *Cache) Incr(key string) error {
 	return err
 }
 
-// Incr increase counter in redis.
-func (rc *Cache) IncrBy(key string, increment int) error {
-	_, err := redis.Bool(rc.do("INCRBY", key, increment))
-	return err
+// IncrBy increases the counter in redis by increment and returns the new
+// value as int64 (Redis INCRBY reply). increment must be >= 0 (use DecrBy to
+// decrease). a missing key is created as 0 before the increment is applied;
+// note that, unlike Put (which always sets a TTL via SETEX), a counter
+// created this way has no TTL and lives until Delete/ClearAll.
+func (rc *Cache) IncrBy(key string, increment int) (int64, error) {
+	if increment < 0 {
+		return 0, errors.New("increment must be >= 0, use DecrBy to decrease")
+	}
+	return redis.Int64(rc.do("INCRBY", key, increment))
 }
 
 // Decr decrease counter in redis.
@@ -145,10 +151,15 @@ func (rc *Cache) Decr(key string) error {
 	return err
 }
 
-// Decr decrease counter in redis.
-func (rc *Cache) DecrBy(key string, decrement int) error {
-	_, err := redis.Bool(rc.do("INCRBY", key, -decrement))
-	return err
+// DecrBy decreases the counter in redis by decrement and returns the new
+// value as int64 (Redis DECRBY reply; may be negative). decrement must be
+// >= 0 (use IncrBy to increase). see IncrBy for the missing-key and TTL
+// semantics.
+func (rc *Cache) DecrBy(key string, decrement int) (int64, error) {
+	if decrement < 0 {
+		return 0, errors.New("decrement must be >= 0, use IncrBy to increase")
+	}
+	return redis.Int64(rc.do("DECRBY", key, decrement))
 }
 
 // ClearAll clean all cache in redis. delete this redis collection.

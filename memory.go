@@ -110,135 +110,78 @@ func (bc *MemoryCache) Delete(name string) error {
 // Incr increase cache counter in memory.
 // it supports int,int32,int64,uint,uint32,uint64.
 func (bc *MemoryCache) Incr(key string) error {
-	bc.Lock()
-	defer bc.Unlock()
-	itm, ok := bc.items[key]
-	if !ok {
-		return errors.New("key not exist")
-	}
-	switch val := itm.val.(type) {
-	case int:
-		itm.val = val + 1
-	case int32:
-		itm.val = val + 1
-	case int64:
-		itm.val = val + 1
-	case uint:
-		itm.val = val + 1
-	case uint32:
-		itm.val = val + 1
-	case uint64:
-		itm.val = val + 1
-	default:
-		return errors.New("item val is not (u)int (u)int32 (u)int64")
-	}
-	return nil
+	_, err := bc.IncrBy(key, 1)
+	return err
 }
 
 // Incr increase cache counter in memory.
-// it supports int,int32,int64,uint,uint32,uint64.
-func (bc *MemoryCache) IncrBy(key string, increment int) error {
-	bc.Lock()
-	defer bc.Unlock()
-	itm, ok := bc.items[key]
-	if !ok {
-		return errors.New("key not exist")
+// it supports int, int32, int64, uint, uint32 and uint64 stored values; the
+// stored value keeps its original type.
+func (bc *MemoryCache) IncrBy(key string, increment int) (int64, error) {
+	if increment < 0 {
+		return 0, errors.New("increment must be >= 0, use DecrBy to decrease")
 	}
-	switch val := itm.val.(type) {
-	case int:
-		itm.val = val + increment
-	case int32:
-		itm.val = val + int32(increment)
-	case int64:
-		itm.val = val + int64(increment)
-	case uint:
-		itm.val = val + uint(increment)
-	case uint32:
-		itm.val = val + uint32(increment)
-	case uint64:
-		itm.val = val + uint64(increment)
-	default:
-		return errors.New("item val is not (u)int (u)int32 (u)int64")
-	}
-	return nil
+	return bc.applyIncrOrDecrDiffValue(key, increment)
 }
 
-// Decr decrease counter in memory.
+// Decr decreases cache counter in memory by 1.
+// it is equivalent to DecrBy(key, 1), discarding the new value.
 func (bc *MemoryCache) Decr(key string) error {
-	bc.Lock()
-	defer bc.Unlock()
-	itm, ok := bc.items[key]
-	if !ok {
-		return errors.New("key not exist")
-	}
-	switch val := itm.val.(type) {
-	case int:
-		itm.val = val - 1
-	case int64:
-		itm.val = val - 1
-	case int32:
-		itm.val = val - 1
-	case uint:
-		if val > 0 {
-			itm.val = val - 1
-		} else {
-			return errors.New("item val is less than 0")
-		}
-	case uint32:
-		if val > 0 {
-			itm.val = val - 1
-		} else {
-			return errors.New("item val is less than 0")
-		}
-	case uint64:
-		if val > 0 {
-			itm.val = val - 1
-		} else {
-			return errors.New("item val is less than 0")
-		}
-	default:
-		return errors.New("item val is not int int64 int32")
-	}
-	return nil
+	_, err := bc.DecrBy(key, 1)
+	return err
 }
 
-// Decr decrease counter in memory.
-func (bc *MemoryCache) DecrBy(key string, decrement int) error {
+// DecrBy decreases the cache counter in memory by decrement and returns the
+// new value as int64. decrement must be >= 0 (use IncrBy to increase).
+// a missing or expired key is created as 0, without expiration, before the
+// decrement is applied. unsigned stored values return an error instead of
+// going below 0.
+func (bc *MemoryCache) DecrBy(key string, decrement int) (int64, error) {
+	if decrement < 0 {
+		return 0, errors.New("decrement must be >= 0, use IncrBy to increase")
+	}
+	return bc.applyIncrOrDecrDiffValue(key, -decrement)
+}
+
+func (bc *MemoryCache) applyIncrOrDecrDiffValue(key string, diffValue int) (int64, error) {
 	bc.Lock()
 	defer bc.Unlock()
+
 	itm, ok := bc.items[key]
-	if !ok {
-		return errors.New("key not exist")
+
+	if !ok || itm.isExpire() {
+		value := int64(0)
+		bc.items[key] = &MemoryItem{val: value, createdTime: time.Now(), lifespan: 0}
+		itm = bc.items[key]
 	}
+
+	updated, err := calculateIncrOrDecr(itm.val, diffValue)
+
 	switch val := itm.val.(type) {
-	case int:
-		itm.val = val - decrement
 	case int64:
-		itm.val = val - int64(decrement)
-	case int32:
-		itm.val = val - int32(decrement)
-	case uint:
-		if val > 0 {
-			itm.val = val - uint(decrement)
-		} else {
-			return errors.New("item val is less than 0")
+		// handle calculateIncrOrDecr for itm.val int64 type
+		if err != nil {
+			// return current value and error occurred when applying diffValue
+			return val, err
 		}
-	case uint32:
-		if val > 0 {
-			itm.val = val - uint32(decrement)
-		} else {
-			return errors.New("item val is less than 0")
-		}
-	case uint64:
-		if val > 0 {
-			itm.val = val - uint64(decrement)
-		} else {
-			return errors.New("item val is less than 0")
-		}
-	default:
-		return errors.New("item val is not int int64 int32")
+
+		// apply and return updated value
+		itm.val = updated
+		return updated, nil
 	}
-	return nil
+
+	// handle calculateIncrOrDecr for itm.val not int64 type
+	if err != nil {
+		// retrieve current value in int64 for (u)int(8,16,32,64) types or zero in int64
+		currValOrZeroInt64, _ := toInt64(itm.val)
+
+		// return current value or zero and error occurred when applying diffValue
+		return currValOrZeroInt64, err
+	}
+
+	// for itm.val not int64 type, recreate MemoryItem record replacing val type to int64 and keeping other data
+	bc.items[key] = &MemoryItem{val: updated, createdTime: itm.createdTime, lifespan: itm.lifespan}
+	return updated, nil
 }
 
 // IsExist check cache exist in memory.
@@ -309,12 +252,17 @@ func (bc *MemoryCache) expiredKeys() (keys []string) {
 	return
 }
 
-// clearItems removes all the items which key in keys.
+// clearItems removes the items whose keys are in keys, re-checking expiry
+// under the write lock: a key collected by the GC scan may have been
+// re-created meanwhile (e.g. auto-initialized by IncrBy/DecrBy) and must
+// survive the sweep.
 func (bc *MemoryCache) clearItems(keys []string) {
 	bc.Lock()
 	defer bc.Unlock()
 	for _, key := range keys {
-		delete(bc.items, key)
+		if itm, ok := bc.items[key]; ok && itm.isExpire() {
+			delete(bc.items, key)
+		}
 	}
 }
 
