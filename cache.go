@@ -46,10 +46,9 @@ import (
 //	c.Put("key",value, 3600 * time.Second)
 //	v := c.Get("key")
 //
-//	c.Incr("counter")				// now is 1
-//	c.Incr("counter")				// now is 2
-//	c.IncrBy("counter", 3)	// now is 5
-//	count := c.Get("counter").(int)
+//	c.Incr("counter")										// now is 1
+//	c.Incr("counter")										// now is 2
+//	count, _ := c.IncrBy("counter", 3)	// count == 5
 type Cache interface {
 	// get cached value by key.
 	Get(key string) interface{}
@@ -62,14 +61,26 @@ type Cache interface {
 	// increase cached int value by key, as a counter.
 	Incr(key string) error
 
-	// increase cached int value by key and the increment, as a counter/game score.
-	IncrBy(key string, increment int) error
+	// IncrBy atomically increases the cached counter by increment and
+	// returns the new value as int64.
+	// increment must be >= 0; a negative increment returns an error
+	// (call DecrBy to decrease).
+	// A missing key is created as 0 before the increment is applied.
+	IncrBy(key string, increment int) (int64, error)
 
 	// decrease cached int value by key, as a counter.
 	Decr(key string) error
 
-	// decrease cached int value by key and the decrement, as a counter/game score.
-	DecrBy(key string, decrement int) error
+	// DecrBy atomically decreases the cached counter by decrement and
+	// returns the new value as int64.
+	// decrement must be >= 0; a negative decrement returns an error
+	// (call IncrBy to increase).
+	// A missing key is created as 0 before the decrement is applied.
+	// Floor semantics differ per adapter: memcache clamps the result at 0
+	// (memcached counters are unsigned); memory returns an error when an
+	// unsigned stored value would go below 0; memory (signed), redis, ssdb
+	// and file allow negative results.
+	DecrBy(key string, decrement int) (int64, error)
 
 	// check if cached value exists or not.
 	IsExist(key string) bool

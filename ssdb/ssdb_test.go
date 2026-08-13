@@ -48,16 +48,16 @@ func TestSsdbcacheCache(t *testing.T) {
 		t.Error("get err")
 	}
 
-	if err = ssdb.IncrBy("ssdb", 2); err != nil {
-		t.Error("incr Error", err)
+	if v, err := ssdb.IncrBy("ssdb", 2); err != nil || v != 5 {
+		t.Error("IncrBy Error", v, err)
 	}
 
 	if v, err := strconv.Atoi(ssdb.Get("ssdb").(string)); err != nil || v != 5 {
 		t.Error("get err")
 	}
 
-	if err = ssdb.DecrBy("ssdb", 2); err != nil {
-		t.Error("decr error")
+	if v, err := ssdb.DecrBy("ssdb", 2); err != nil || v != 3 {
+		t.Error("DecrBy Error", v, err)
 	}
 
 	if v, err := strconv.Atoi(ssdb.Get("ssdb").(string)); err != nil || v != 3 {

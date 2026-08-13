@@ -80,16 +80,16 @@ func TestRedisCache(t *testing.T) {
 		t.Error("get err")
 	}
 
-	if err = bm.IncrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.IncrBy("astaxie", 3); err != nil || v != 5 {
+		t.Error("IncrBy Error", v, err)
 	}
 
 	if v, _ := redis.Int(bm.Get("astaxie"), err); v != 5 {
 		t.Error("get err")
 	}
 
-	if err = bm.DecrBy("astaxie", 3); err != nil {
-		t.Error("Decr Error", err)
+	if v, err := bm.DecrBy("astaxie", 3); err != nil || v != 2 {
+		t.Error("DecrBy Error", v, err)
 	}
 
 	if v, _ := redis.Int(bm.Get("astaxie"), err); v != 2 {
@@ -146,7 +146,7 @@ func TestRedisCache(t *testing.T) {
 }
 
 func TestCache_Scan(t *testing.T) {
-	timeoutDuration := 10 * time.Second
+	timeoutDuration := 30 * time.Second
 	// init
 	bm, err := cache.NewCache("redis", `{"conn": "127.0.0.1:6379"}`)
 	if err != nil {

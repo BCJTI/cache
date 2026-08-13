@@ -38,7 +38,7 @@ func TestCacheIncr(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if bm.Get("edwardhey").(int) != 10 {
+	if bm.Get("edwardhey").(int64) != 10 {
 		t.Error("Incr err")
 	}
 }
@@ -60,7 +60,7 @@ func TestCacheIncrBy(t *testing.T) {
 	}
 	wg.Wait()
 	// 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
-	if bm.Get("edwardhey").(int) != 55 {
+	if bm.Get("edwardhey").(int64) != 55 {
 		t.Error("Incr err")
 	}
 }
@@ -96,23 +96,23 @@ func TestCache(t *testing.T) {
 		t.Error("Incr Error", err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 2 {
+	if v := bm.Get("astaxie"); v.(int64) != 2 {
 		t.Error("get err")
 	}
 
-	if err = bm.IncrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.IncrBy("astaxie", 3); err != nil || v != 5 {
+		t.Error("IncrBy Error", v, err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 5 {
+	if v := bm.Get("astaxie"); v.(int64) != 5 {
 		t.Error("get err")
 	}
 
-	if err = bm.DecrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.DecrBy("astaxie", 3); err != nil || v != 2 {
+		t.Error("DecrBy Error", v, err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 2 {
+	if v := bm.Get("astaxie"); v.(int64) != 2 {
 		t.Error("get err")
 	}
 
@@ -120,7 +120,7 @@ func TestCache(t *testing.T) {
 		t.Error("Decr Error", err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 1 {
+	if v := bm.Get("astaxie"); v.(int64) != 1 {
 		t.Error("get err")
 	}
 	bm.Delete("astaxie")
@@ -179,23 +179,23 @@ func TestFileCache(t *testing.T) {
 		t.Error("Incr Error", err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 2 {
+	if v := bm.Get("astaxie"); v.(int64) != 2 {
 		t.Error("get err")
 	}
 
-	if err = bm.IncrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.IncrBy("astaxie", 3); err != nil || v != 5 {
+		t.Error("IncrBy Error", v, err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 5 {
+	if v := bm.Get("astaxie"); v.(int64) != 5 {
 		t.Error("get err")
 	}
 
-	if err = bm.DecrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.DecrBy("astaxie", 3); err != nil || v != 2 {
+		t.Error("DecrBy Error", v, err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 2 {
+	if v := bm.Get("astaxie"); v.(int64) != 2 {
 		t.Error("get err")
 	}
 
@@ -203,7 +203,7 @@ func TestFileCache(t *testing.T) {
 		t.Error("Decr Error", err)
 	}
 
-	if v := bm.Get("astaxie"); v.(int) != 1 {
+	if v := bm.Get("astaxie"); v.(int64) != 1 {
 		t.Error("get err")
 	}
 	bm.Delete("astaxie")

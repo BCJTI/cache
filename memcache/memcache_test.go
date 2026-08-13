@@ -57,16 +57,16 @@ func TestMemcacheCache(t *testing.T) {
 		t.Error("get err")
 	}
 
-	if err = bm.IncrBy("astaxie", 3); err != nil {
-		t.Error("Incr Error", err)
+	if v, err := bm.IncrBy("astaxie", 3); err != nil || v != 5 {
+		t.Error("IncrBy Error", v, err)
 	}
 
 	if v, err := strconv.Atoi(string(bm.Get("astaxie").([]byte))); err != nil || v != 5 {
 		t.Error("get err")
 	}
 
-	if err = bm.DecrBy("astaxie", 3); err != nil {
-		t.Error("Decr Error", err)
+	if v, err := bm.DecrBy("astaxie", 3); err != nil || v != 2 {
+		t.Error("DecrBy Error", v, err)
 	}
 
 	if v, err := strconv.Atoi(string(bm.Get("astaxie").([]byte))); err != nil || v != 2 {
