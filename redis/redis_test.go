@@ -181,3 +181,63 @@ func TestCache_Scan(t *testing.T) {
 		t.Error("scan all err")
 	}
 }
+
+func TestRedisSetAndExpire(t *testing.T) {
+	bm, err := cache.NewCache("redis", `{"conn": "127.0.0.1:6379"}`)
+	if err != nil {
+		t.Fatal("init err", err)
+	}
+	bm.Delete("set-test-set")
+	bm.Delete("set-test-plain")
+
+	if members, err := bm.SMembers("set-test-set"); err != nil || len(members) != 0 || members == nil {
+		t.Fatalf("SMembers(missing) = %#v, %v; want empty, nil", members, err)
+	}
+	if n, err := bm.SAdd("set-test-set", "a", "b", "a"); err != nil || n != 2 {
+		t.Fatalf("SAdd = %d, %v; want 2, nil", n, err)
+	}
+	if n, err := bm.SRem("set-test-set", "a", "x"); err != nil || n != 1 {
+		t.Fatalf("SRem = %d, %v; want 1, nil", n, err)
+	}
+	if members, err := bm.SMembers("set-test-set"); err != nil || len(members) != 1 || members[0] != "b" {
+		t.Fatalf("SMembers = %v, %v; want [b], nil", members, err)
+	}
+	if _, err := bm.SAdd("set-test-set"); err == nil {
+		t.Fatal("SAdd without members: want error")
+	}
+
+	if ok, err := bm.Expire("set-test-set", 300*time.Millisecond); err != nil || !ok {
+		t.Fatalf("Expire = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := bm.Expire("set-test-missing", time.Second); err != nil || ok {
+		t.Fatalf("Expire(missing) = %v, %v; want false, nil", ok, err)
+	}
+	if _, err := bm.Expire("set-test-set", 0); err == nil {
+		t.Fatal("Expire with timeout 0: want error")
+	}
+
+	if ok, err := bm.PutIfExists("set-test-plain", "v1", time.Minute); err != nil || ok {
+		t.Fatalf("PutIfExists(missing) = %v, %v; want false, nil", ok, err)
+	}
+	if bm.IsExist("set-test-plain") {
+		t.Fatal("PutIfExists created a missing key")
+	}
+	if err := bm.Put("set-test-plain", "v1", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := bm.PutIfExists("set-test-plain", "v2", 300*time.Millisecond); err != nil || !ok {
+		t.Fatalf("PutIfExists(existing) = %v, %v; want true, nil", ok, err)
+	}
+	if v, _ := redis.String(bm.Get("set-test-plain"), nil); v != "v2" {
+		t.Fatalf("Get = %q, want v2", v)
+	}
+	if _, err := bm.SAdd("set-test-plain", "a"); err == nil {
+		t.Fatal("SAdd on a non-set key: want error")
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	if bm.IsExist("set-test-set") || bm.IsExist("set-test-plain") {
+		t.Fatal("keys still exist after their TTL")
+	}
+}
