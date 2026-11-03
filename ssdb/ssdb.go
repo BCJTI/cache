@@ -183,6 +183,50 @@ func (rc *Cache) incrBy(key string, n int) (int64, error) {
 	return 0, fmt.Errorf("ssdb: bad response %v", resp)
 }
 
+// PutIfExists is not supported: ssdb has no atomic write-if-exists
+// command. it returns cache.ErrNotSupported.
+func (rc *Cache) PutIfExists(key string, value interface{}, timeout time.Duration) (bool, error) {
+	return false, cache.ErrNotSupported
+}
+
+// Expire sets the TTL of an existing key with the ssdb expire command.
+// timeout must be > 0 and is rounded up to whole seconds. it reports whether
+// the key existed.
+func (rc *Cache) Expire(key string, timeout time.Duration) (bool, error) {
+	if timeout <= 0 {
+		return false, errors.New("timeout must be > 0")
+	}
+	ttl := int64(timeout / time.Second)
+	if ttl == 0 {
+		ttl = 1
+	}
+	resp, err := rc.do("expire", key, ttl)
+	if err != nil {
+		return false, err
+	}
+	if len(resp) == 2 && resp[0] == "ok" {
+		return resp[1] == "1", nil
+	}
+	return false, fmt.Errorf("ssdb: bad response %v", resp)
+}
+
+// SAdd is not supported: ssdb has no set type that shares the key-value
+// namespace (and TTL) of the other operations. it returns
+// cache.ErrNotSupported.
+func (rc *Cache) SAdd(key string, members ...string) (int64, error) {
+	return 0, cache.ErrNotSupported
+}
+
+// SRem is not supported (see SAdd). it returns cache.ErrNotSupported.
+func (rc *Cache) SRem(key string, members ...string) (int64, error) {
+	return 0, cache.ErrNotSupported
+}
+
+// SMembers is not supported (see SAdd). it returns cache.ErrNotSupported.
+func (rc *Cache) SMembers(key string) ([]string, error) {
+	return nil, cache.ErrNotSupported
+}
+
 // IsExist check value exists in ssdb.
 func (rc *Cache) IsExist(key string) bool {
 	resp, err := rc.do("exists", key)

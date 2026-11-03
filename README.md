@@ -31,6 +31,25 @@ Use it like this:
 	bm.IsExist("astaxie")
 	bm.Delete("astaxie")
 
+Sets, expiration and conditional writes:
+
+	added, err := bm.SAdd("tags", "a", "b")    // atomically add members, returns how many were new
+	removed, err := bm.SRem("tags", "a")       // atomically remove members; an emptied set is deleted
+	members, err := bm.SMembers("tags")        // all members, in no particular order
+	ok, err := bm.Expire("tags", time.Hour)    // new TTL for an existing key (false if missing)
+	ok, err = bm.PutIfExists("k", "v", ttl)    // write only if the key exists (false if missing)
+
+Support per adapter:
+
+| Operation             | memory | file  | redis                  | memcache | ssdb   |
+|-----------------------|--------|-------|------------------------|----------|--------|
+| SAdd, SRem, SMembers  | yes    | yes*  | yes (SADD/SREM/SMEMBERS) | no     | no     |
+| Expire                | yes    | yes*  | yes (PEXPIRE)          | yes (touch) | yes (expire) |
+| PutIfExists           | yes    | yes*  | yes (SET XX)           | yes (replace) | no |
+
+Unsupported operations return `cache.ErrNotSupported`.
+\* the file adapter serializes these writes within one process only.
+
 
 ## Memory adapter
 

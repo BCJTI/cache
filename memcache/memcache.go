@@ -187,6 +187,96 @@ func (rc *Cache) incrDecr(key string, delta uint64, negate bool) (int64, error) 
 	return int64(nv), nil
 }
 
+// maxRelativeExpiration is the largest expiration memcached reads as
+// seconds from now; larger values are read as an absolute Unix time.
+const maxRelativeExpiration = 30 * 24 * 60 * 60
+
+// expiration converts timeout to a memcached expiration: whole seconds
+// (a positive sub-second timeout rounds up to 1), or an absolute Unix time
+// beyond 30 days. 0 means no expiration.
+func expiration(timeout time.Duration) int32 {
+	secs := int64(timeout / time.Second)
+	if secs == 0 && timeout > 0 {
+		secs = 1
+	}
+	if secs > maxRelativeExpiration {
+		secs += time.Now().Unix()
+	}
+	if secs > math.MaxInt32 {
+		secs = math.MaxInt32
+	}
+	return int32(secs)
+}
+
+// PutIfExists writes val under key only when key exists, with memcached
+// replace (atomic). timeout 0 means no expiration. val must be a string or
+// []byte. it reports whether the value was written.
+func (rc *Cache) PutIfExists(key string, val interface{}, timeout time.Duration) (bool, error) {
+	if timeout < 0 {
+		return false, errors.New("timeout must be >= 0")
+	}
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return false, err
+		}
+	}
+	item := memcache.Item{Key: key, Expiration: expiration(timeout)}
+	if v, ok := val.([]byte); ok {
+		item.Value = v
+	} else if str, ok := val.(string); ok {
+		item.Value = []byte(str)
+	} else {
+		return false, errors.New("val only support string and []byte")
+	}
+	switch err := rc.conn.Replace(&item); err {
+	case nil:
+		return true, nil
+	case memcache.ErrNotStored:
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// Expire sets the expiration of an existing key with memcached touch.
+// timeout must be > 0 and is rounded up to whole seconds. it reports whether
+// the key existed.
+func (rc *Cache) Expire(key string, timeout time.Duration) (bool, error) {
+	if timeout <= 0 {
+		return false, errors.New("timeout must be > 0")
+	}
+	if rc.conn == nil {
+		if err := rc.connectInit(); err != nil {
+			return false, err
+		}
+	}
+	switch err := rc.conn.Touch(key, expiration(timeout)); err {
+	case nil:
+		return true, nil
+	case memcache.ErrCacheMiss:
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// SAdd is not supported: memcached has no set type, and emulating one
+// with read-modify-write would not be atomic. it returns
+// cache.ErrNotSupported.
+func (rc *Cache) SAdd(key string, members ...string) (int64, error) {
+	return 0, cache.ErrNotSupported
+}
+
+// SRem is not supported (see SAdd). it returns cache.ErrNotSupported.
+func (rc *Cache) SRem(key string, members ...string) (int64, error) {
+	return 0, cache.ErrNotSupported
+}
+
+// SMembers is not supported (see SAdd). it returns cache.ErrNotSupported.
+func (rc *Cache) SMembers(key string) ([]string, error) {
+	return nil, cache.ErrNotSupported
+}
+
 // IsExist check value exists in memcache.
 func (rc *Cache) IsExist(key string) bool {
 	if rc.conn == nil {
