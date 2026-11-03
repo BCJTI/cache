@@ -26,6 +26,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -318,6 +319,162 @@ func (fc *FileCache) applyIncrOrDecr(key string, diffValue int) (int64, error) {
 }
 
 // IsExist check value is exist.
+// fileSet is the value stored for a key managed by SAdd/SRem/SMembers.
+type fileSet map[string]bool
+
+// writeItem encodes item and stores it under key. the caller must hold
+// fc.lock.
+func (fc *FileCache) writeItem(key string, item FileCacheItem) error {
+	item.Lastaccess = time.Now()
+	data, err := GobEncode(item)
+	if err != nil {
+		return err
+	}
+	return FilePutContents(fc.getCacheFileName(key), data)
+}
+
+// expiryFor returns the expiration time for timeout counted from now; 0
+// means forever.
+func expiryFor(timeout time.Duration) time.Time {
+	if timeout == 0 {
+		return time.Now().Add(foreverDuration)
+	}
+	return time.Now().Add(timeout)
+}
+
+// PutIfExists replaces the value and expiration of an existing, non-expired
+// key; timeout 0 means forever. it reports whether the value was written.
+// writes are serialized within this process only.
+func (fc *FileCache) PutIfExists(key string, val interface{}, timeout time.Duration) (bool, error) {
+	if timeout < 0 {
+		return false, errors.New("timeout must be >= 0")
+	}
+	gob.Register(val)
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+	if _, exist, err := fc.getItem(key); err != nil || !exist {
+		return false, err
+	}
+	if err := fc.writeItem(key, FileCacheItem{Data: val, Expired: expiryFor(timeout)}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Expire sets the expiration of an existing, non-expired key to timeout from
+// now. timeout must be > 0. it reports whether the key existed.
+func (fc *FileCache) Expire(key string, timeout time.Duration) (bool, error) {
+	if timeout <= 0 {
+		return false, errors.New("timeout must be > 0")
+	}
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+	item, exist, err := fc.getItem(key)
+	if err != nil || !exist {
+		return false, err
+	}
+	item.Expired = expiryFor(timeout)
+	if err = fc.writeItem(key, item); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// liveSet returns the item and set stored at key; set is nil when key is
+// missing or expired. the caller must hold fc.lock.
+func (fc *FileCache) liveSet(key string) (FileCacheItem, fileSet, error) {
+	item, exist, err := fc.getItem(key)
+	if err != nil || !exist {
+		return item, nil, err
+	}
+	set, isSet := item.Data.(fileSet)
+	if !isSet {
+		return item, nil, errors.New("key holds a value that is not a set")
+	}
+	return item, set, nil
+}
+
+// SAdd adds members to the set stored at key, creating it without expiration
+// when key is missing or expired, and returns how many members were added.
+// writes are serialized within this process only.
+func (fc *FileCache) SAdd(key string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+	item, set, err := fc.liveSet(key)
+	if err != nil {
+		return 0, err
+	}
+	if set == nil {
+		set = fileSet{}
+		item = FileCacheItem{Data: set, Expired: expiryFor(0)}
+	}
+	var added int64
+	for _, m := range members {
+		if !set[m] {
+			set[m] = true
+			added++
+		}
+	}
+	if added == 0 {
+		return 0, nil
+	}
+	if err = fc.writeItem(key, item); err != nil {
+		return 0, err
+	}
+	return added, nil
+}
+
+// SRem removes members from the set stored at key and returns how many were
+// removed. a set left empty is deleted.
+func (fc *FileCache) SRem(key string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+	item, set, err := fc.liveSet(key)
+	if err != nil || set == nil {
+		return 0, err
+	}
+	var removed int64
+	for _, m := range members {
+		if set[m] {
+			delete(set, m)
+			removed++
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if len(set) == 0 {
+		err = os.Remove(fc.getCacheFileName(key))
+	} else {
+		err = fc.writeItem(key, item)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
+// SMembers returns the sorted members of the set stored at key; a missing or
+// expired key returns an empty slice.
+func (fc *FileCache) SMembers(key string) ([]string, error) {
+	_, set, err := fc.liveSet(key)
+	if err != nil {
+		return nil, err
+	}
+	members := make([]string, 0, len(set))
+	for m := range set {
+		members = append(members, m)
+	}
+	sort.Strings(members)
+	return members, nil
+}
+
 func (fc *FileCache) IsExist(key string) bool {
 	ret, _ := exists(fc.getCacheFileName(key))
 	return ret
@@ -402,6 +559,7 @@ func init() {
 	gob.Register(uint(0))
 	gob.Register(uint32(0))
 	gob.Register(uint64(0))
+	gob.Register(fileSet{})
 
 	Register("file", NewFileCache)
 }

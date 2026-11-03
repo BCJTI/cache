@@ -162,6 +162,86 @@ func (rc *Cache) DecrBy(key string, decrement int) (int64, error) {
 	return redis.Int64(rc.do("DECRBY", key, decrement))
 }
 
+// milliseconds converts timeout to whole milliseconds for PX/PEXPIRE,
+// rounding a positive sub-millisecond timeout up to 1ms.
+func milliseconds(timeout time.Duration) int64 {
+	ms := int64(timeout / time.Millisecond)
+	if ms == 0 && timeout > 0 {
+		ms = 1
+	}
+	return ms
+}
+
+// PutIfExists writes val under key only when key exists, with Redis SET ... XX
+// (atomic). timeout 0 stores the value without TTL; otherwise the TTL is set
+// with PX. it reports whether the value was written.
+func (rc *Cache) PutIfExists(key string, val interface{}, timeout time.Duration) (bool, error) {
+	if timeout < 0 {
+		return false, errors.New("timeout must be >= 0")
+	}
+	var reply interface{}
+	var err error
+	if timeout == 0 {
+		reply, err = rc.do("SET", key, val, "XX")
+	} else {
+		reply, err = rc.do("SET", key, val, "PX", milliseconds(timeout), "XX")
+	}
+	if err != nil {
+		return false, err
+	}
+	return reply != nil, nil
+}
+
+// Expire sets the TTL of an existing key with Redis PEXPIRE. timeout must be
+// > 0. it reports whether the key existed.
+func (rc *Cache) Expire(key string, timeout time.Duration) (bool, error) {
+	if timeout <= 0 {
+		return false, errors.New("timeout must be > 0")
+	}
+	return redis.Bool(rc.do("PEXPIRE", key, milliseconds(timeout)))
+}
+
+// SAdd adds members to the set stored at key with Redis SADD and returns how
+// many were added. like a counter, a set created this way has no TTL until
+// Expire is called.
+func (rc *Cache) SAdd(key string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	return redis.Int64(rc.do("SADD", keyAndMembers(key, members)...))
+}
+
+// SRem removes members from the set stored at key with Redis SREM and
+// returns how many were removed. Redis deletes a set left empty.
+func (rc *Cache) SRem(key string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	return redis.Int64(rc.do("SREM", keyAndMembers(key, members)...))
+}
+
+// SMembers returns the members of the set stored at key with Redis
+// SMEMBERS; a missing key returns an empty slice.
+func (rc *Cache) SMembers(key string) ([]string, error) {
+	members, err := redis.Strings(rc.do("SMEMBERS", key))
+	if err != nil {
+		return nil, err
+	}
+	if members == nil {
+		members = []string{}
+	}
+	return members, nil
+}
+
+func keyAndMembers(key string, members []string) []interface{} {
+	args := make([]interface{}, 0, len(members)+1)
+	args = append(args, key)
+	for _, m := range members {
+		args = append(args, m)
+	}
+	return args
+}
+
 // ClearAll clean all cache in redis. delete this redis collection.
 func (rc *Cache) ClearAll() error {
 	cachedKeys, err := rc.Scan(rc.key + ":*")

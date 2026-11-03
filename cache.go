@@ -34,9 +34,14 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrNotSupported is returned by an adapter for an operation its backend
+// cannot perform atomically (for example, set operations on memcache).
+var ErrNotSupported = errors.New("cache: operation not supported by this adapter")
 
 // Cache interface contains all behaviors for cache adapter.
 // usage:
@@ -49,6 +54,13 @@ import (
 //	c.Incr("counter")										// now is 1
 //	c.Incr("counter")										// now is 2
 //	count, _ := c.IncrBy("counter", 3)	// count == 5
+//
+//	c.SAdd("tags", "a", "b")								// set {a, b}
+//	c.Expire("tags", time.Hour)							// whole set expires in 1h
+//	members, _ := c.SMembers("tags")
+//
+// Set operations, Expire and PutIfExists return ErrNotSupported on
+// adapters whose backend cannot perform them atomically.
 type Cache interface {
 	// get cached value by key.
 	Get(key string) interface{}
@@ -81,6 +93,30 @@ type Cache interface {
 	// unsigned stored value would go below 0; memory (signed), redis, ssdb
 	// and file allow negative results.
 	DecrBy(key string, decrement int) (int64, error)
+
+	// PutIfExists sets val under key only when key already exists (and is
+	// not expired), replacing its value and expiration; timeout 0 means no
+	// expiration. It reports whether the value was written.
+	PutIfExists(key string, val interface{}, timeout time.Duration) (bool, error)
+
+	// Expire sets a new expiration on an existing key, counted from now.
+	// timeout must be > 0. It reports whether the key existed.
+	Expire(key string, timeout time.Duration) (bool, error)
+
+	// SAdd atomically adds members to the set stored at key, creating the
+	// set (without expiration) when key does not exist, and returns how
+	// many members were not already present. At least one member is
+	// required. A key holding a non-set value returns an error.
+	SAdd(key string, members ...string) (int64, error)
+
+	// SRem atomically removes members from the set stored at key and
+	// returns how many were removed. A set left empty is deleted. At least
+	// one member is required. A missing key removes nothing.
+	SRem(key string, members ...string) (int64, error)
+
+	// SMembers returns all members of the set stored at key, in no
+	// particular order. A missing key returns an empty slice.
+	SMembers(key string) ([]string, error)
 
 	// check if cached value exists or not.
 	IsExist(key string) bool
