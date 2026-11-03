@@ -318,7 +318,6 @@ func (fc *FileCache) applyIncrOrDecr(key string, diffValue int) (int64, error) {
 	return updated, nil
 }
 
-// IsExist check value is exist.
 // fileSet is the value stored for a key managed by SAdd/SRem/SMembers.
 type fileSet map[string]bool
 
@@ -475,6 +474,7 @@ func (fc *FileCache) SMembers(key string) ([]string, error) {
 	return members, nil
 }
 
+// IsExist check value is exist.
 func (fc *FileCache) IsExist(key string) bool {
 	ret, _ := exists(fc.getCacheFileName(key))
 	return ret
