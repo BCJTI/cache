@@ -122,3 +122,36 @@ func TestSsdbcacheCache(t *testing.T) {
 		t.Error("check err")
 	}
 }
+
+func TestSsdbSetAndExpire(t *testing.T) {
+	ssdb, err := cache.NewCache("ssdb", `{"conn": "127.0.0.1:8888"}`)
+	if err != nil {
+		t.Fatal("init err", err)
+	}
+	if _, err := ssdb.SAdd("set", "a"); err != cache.ErrNotSupported {
+		t.Fatalf("SAdd err = %v, want ErrNotSupported", err)
+	}
+	if _, err := ssdb.SRem("set", "a"); err != cache.ErrNotSupported {
+		t.Fatalf("SRem err = %v, want ErrNotSupported", err)
+	}
+	if _, err := ssdb.SMembers("set"); err != cache.ErrNotSupported {
+		t.Fatalf("SMembers err = %v, want ErrNotSupported", err)
+	}
+	if _, err := ssdb.PutIfExists("k", "v", time.Second); err != cache.ErrNotSupported {
+		t.Fatalf("PutIfExists err = %v, want ErrNotSupported", err)
+	}
+
+	if err := ssdb.Put("expire-key", "v", 0); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ssdb.Expire("expire-key", time.Second); err != nil || !ok {
+		t.Fatalf("Expire = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := ssdb.Expire("expire-missing", time.Second); err != nil || ok {
+		t.Fatalf("Expire(missing) = %v, %v; want false, nil", ok, err)
+	}
+	time.Sleep(2 * time.Second)
+	if ssdb.IsExist("expire-key") {
+		t.Fatal("key still exists after Expire")
+	}
+}

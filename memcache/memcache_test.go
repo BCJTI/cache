@@ -121,3 +121,46 @@ func TestMemcacheCache(t *testing.T) {
 		t.Error("clear all err")
 	}
 }
+
+func TestMemcacheSetNotSupported(t *testing.T) {
+	bm, err := cache.NewCache("memcache", `{"conn": "127.0.0.1:11211"}`)
+	if err != nil {
+		t.Fatal("init err", err)
+	}
+	if _, err := bm.SAdd("set", "a"); err != cache.ErrNotSupported {
+		t.Fatalf("SAdd err = %v, want ErrNotSupported", err)
+	}
+	if _, err := bm.SRem("set", "a"); err != cache.ErrNotSupported {
+		t.Fatalf("SRem err = %v, want ErrNotSupported", err)
+	}
+	if _, err := bm.SMembers("set"); err != cache.ErrNotSupported {
+		t.Fatalf("SMembers err = %v, want ErrNotSupported", err)
+	}
+}
+
+func TestMemcacheExpireAndPutIfExists(t *testing.T) {
+	bm, err := cache.NewCache("memcache", `{"conn": "127.0.0.1:11211"}`)
+	if err != nil {
+		t.Fatal("init err", err)
+	}
+	bm.Delete("expire-key")
+	if ok, err := bm.PutIfExists("expire-key", "v1", time.Minute); err != nil || ok {
+		t.Fatalf("PutIfExists(missing) = %v, %v; want false, nil", ok, err)
+	}
+	if err := bm.Put("expire-key", "v1", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := bm.PutIfExists("expire-key", "v2", time.Minute); err != nil || !ok {
+		t.Fatalf("PutIfExists(existing) = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := bm.Expire("expire-key", time.Second); err != nil || !ok {
+		t.Fatalf("Expire = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := bm.Expire("expire-missing", time.Second); err != nil || ok {
+		t.Fatalf("Expire(missing) = %v, %v; want false, nil", ok, err)
+	}
+	time.Sleep(2 * time.Second)
+	if bm.IsExist("expire-key") {
+		t.Fatal("key still exists after Expire")
+	}
+}

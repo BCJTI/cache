@@ -17,6 +17,7 @@ package cache
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 )
@@ -41,6 +42,11 @@ func (mi *MemoryItem) isExpire() bool {
 	return time.Now().Sub(mi.createdTime) > mi.lifespan
 }
 
+// memorySet is the value stored for a key managed by SAdd/SRem/SMembers.
+// it is only read or changed while holding the MemoryCache lock and is never
+// handed out to callers.
+type memorySet map[string]struct{}
+
 // MemoryCache is Memory cache adapter.
 // it contains a RW locker for safe map storage.
 type MemoryCache struct {
@@ -63,6 +69,10 @@ func (bc *MemoryCache) Get(name string) interface{} {
 	defer bc.RUnlock()
 	if itm, ok := bc.items[name]; ok {
 		if itm.isExpire() {
+			return nil
+		}
+		if _, isSet := itm.val.(memorySet); isSet {
+			// sets are read with SMembers only, like a Redis GET on a set.
 			return nil
 		}
 		return itm.val
@@ -182,6 +192,121 @@ func (bc *MemoryCache) applyIncrOrDecrDiffValue(key string, diffValue int) (int6
 	// for itm.val not int64 type, recreate MemoryItem record replacing val type to int64 and keeping other data
 	bc.items[key] = &MemoryItem{val: updated, createdTime: itm.createdTime, lifespan: itm.lifespan}
 	return updated, nil
+}
+
+// PutIfExists replaces the value and expiration of an existing, non-expired
+// key; lifespan 0 means forever. it reports whether the value was written.
+func (bc *MemoryCache) PutIfExists(name string, value interface{}, lifespan time.Duration) (bool, error) {
+	if lifespan < 0 {
+		return false, errors.New("timeout must be >= 0")
+	}
+	bc.Lock()
+	defer bc.Unlock()
+	if itm, ok := bc.items[name]; !ok || itm.isExpire() {
+		return false, nil
+	}
+	bc.items[name] = &MemoryItem{val: value, createdTime: time.Now(), lifespan: lifespan}
+	return true, nil
+}
+
+// Expire sets the lifespan of an existing, non-expired key to lifespan,
+// counted from now. lifespan must be > 0. it reports whether the key existed.
+func (bc *MemoryCache) Expire(name string, lifespan time.Duration) (bool, error) {
+	if lifespan <= 0 {
+		return false, errors.New("timeout must be > 0")
+	}
+	bc.Lock()
+	defer bc.Unlock()
+	itm, ok := bc.items[name]
+	if !ok || itm.isExpire() {
+		return false, nil
+	}
+	itm.createdTime = time.Now()
+	itm.lifespan = lifespan
+	return true, nil
+}
+
+// liveSet returns the set stored at name, or nil when name is missing or
+// expired. the caller must hold the lock.
+func (bc *MemoryCache) liveSet(name string) (memorySet, error) {
+	itm, ok := bc.items[name]
+	if !ok || itm.isExpire() {
+		return nil, nil
+	}
+	set, isSet := itm.val.(memorySet)
+	if !isSet {
+		return nil, errors.New("key holds a value that is not a set")
+	}
+	return set, nil
+}
+
+// SAdd adds members to the set stored at name, creating it without
+// expiration when name is missing or expired, and returns how many members
+// were added.
+func (bc *MemoryCache) SAdd(name string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	bc.Lock()
+	defer bc.Unlock()
+	set, err := bc.liveSet(name)
+	if err != nil {
+		return 0, err
+	}
+	if set == nil {
+		set = memorySet{}
+		bc.items[name] = &MemoryItem{val: set, createdTime: time.Now(), lifespan: 0}
+	}
+	var added int64
+	for _, m := range members {
+		if _, ok := set[m]; !ok {
+			set[m] = struct{}{}
+			added++
+		}
+	}
+	return added, nil
+}
+
+// SRem removes members from the set stored at name and returns how many were
+// removed. a set left empty is deleted.
+func (bc *MemoryCache) SRem(name string, members ...string) (int64, error) {
+	if len(members) == 0 {
+		return 0, errors.New("at least one member is required")
+	}
+	bc.Lock()
+	defer bc.Unlock()
+	set, err := bc.liveSet(name)
+	if err != nil || set == nil {
+		return 0, err
+	}
+	var removed int64
+	for _, m := range members {
+		if _, ok := set[m]; ok {
+			delete(set, m)
+			removed++
+		}
+	}
+	if len(set) == 0 {
+		delete(bc.items, name)
+	}
+	return removed, nil
+}
+
+// SMembers returns a sorted copy of the members of the set stored at name;
+// a missing or expired key returns an empty slice.
+func (bc *MemoryCache) SMembers(name string) ([]string, error) {
+	bc.RLock()
+	defer bc.RUnlock()
+	set, err := bc.liveSet(name)
+	if err != nil {
+		return nil, err
+	}
+	members := make([]string, 0, len(set))
+	for m := range set {
+		members = append(members, m)
+	}
+	sort.Strings(members)
+	return members, nil
 }
 
 // IsExist check cache exist in memory.
